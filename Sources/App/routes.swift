@@ -2,14 +2,25 @@
 import Vapor
 
 func routes(_ app: Application) throws {
-    app.get { req async throws in
-        try await req.view.render("index", ["title": "Hello Vapor!"])
+
+    struct Hello: Content {
+        var name: String?
     }
 
-    app.get("hello") { req async -> String in
-        "Hello, world!"
+    
+    app.get("hello") { req -> String in
+        let hello = try req.query.decode(Hello.self)
+        return "Hello, \(hello.name ?? "Anonymous")"
     }
-
-    try app.register(collection: TodoController())
+    
+    app.get("hello", ":name") {req -> String in
+        guard let name = req.parameters.get("name", as: Int.self) else {
+            throw Abort.redirect(to: "https://intron014.com/404")
+        }
+        return "\(name) wooo"
+    }
+    
+    
+    
     try app.register(collection: BicimadController())
 }
