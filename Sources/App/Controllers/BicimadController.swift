@@ -1,6 +1,6 @@
 import Vapor
 import Foundation
-import CommonCrypto
+import Crypto
 
 /// getBicimadFavs
 struct bicimadStations: Content {
@@ -126,23 +126,58 @@ struct BicimadController: RouteCollection {
         return ecbEncrypt(src: src, key: keyData)?.base64EncodedString()
     }
 
+   // func ecbEncrypt(src: Data, key: Data) -> Data? {
+   //     var outLength = Int(0)
+   //     var outBytes = [UInt8](repeating: 0, count: src.count + kCCBlockSizeDES)
+   //
+   //     let result = key.withUnsafeBytes { keyBytes in
+   //         src.withUnsafeBytes { srcBytes in
+   //             CCCrypt(CCOperation(kCCEncrypt), CCAlgorithm(kCCAlgorithmDES), CCOptions(kCCOptionECBMode),
+   //                     keyBytes.baseAddress, kCCKeySizeDES, nil,
+   //                     srcBytes.baseAddress, src.count,
+   //                     &outBytes, outBytes.count, &outLength)
+   //         }
+   //     }
+   //
+   //     if result == CCCryptorStatus(kCCSuccess) {
+   //         return Data(bytes: outBytes, count: outLength)
+   //     } else {
+   //         return nil
+   //     }
+   // }
+
     func ecbEncrypt(src: Data, key: Data) -> Data? {
-        var outLength = Int(0)
-        var outBytes = [UInt8](repeating: 0, count: src.count + kCCBlockSizeDES)
+        guard key.count == 8 else {
+            print("Key must be exactly 8 bytes long")
+            return nil
+        }
         
-        let result = key.withUnsafeBytes { keyBytes in
-            src.withUnsafeBytes { srcBytes in
-                CCCrypt(CCOperation(kCCEncrypt), CCAlgorithm(kCCAlgorithmDES), CCOptions(kCCOptionECBMode),
-                        keyBytes.baseAddress, kCCKeySizeDES, nil,
-                        srcBytes.baseAddress, src.count,
-                        &outBytes, outBytes.count, &outLength)
+        let paddedKey = key + key
+        let aesKey = SymmetricKey(data: paddedKey)
+        let paddedSrc = pkcs7Pad(data: src, blockSize: 8)
+        var encrypted = Data()
+        
+        for i in stride(from: 0, to: paddedSrc.count, by: 8) {
+            let block = paddedSrc.subdata(in: i..<i+8)
+            
+            let paddedBlock = block + block
+            
+            do {
+                let sealedBox = try AES.GCM.seal(paddedBlock, using: aesKey)
+                encrypted += sealedBox.ciphertext.prefix(8)
+            } catch {
+                print("Encryption failed: \(error)")
+                return nil
             }
         }
         
-        if result == CCCryptorStatus(kCCSuccess) {
-            return Data(bytes: outBytes, count: outLength)
-        } else {
-            return nil
-        }
+        return encrypted
+    }
+
+    func pkcs7Pad(data: Data, blockSize: Int) -> Data {
+        let padding = blockSize - (data.count % blockSize)
+        var result = data
+        result += Data(repeating: UInt8(padding), count: padding)
+        return result
     }
 }
