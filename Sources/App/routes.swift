@@ -23,6 +23,7 @@ func routes(_ app: Application) throws {
     
     
     try app.register(collection: BicimadController())
+    try app.register(collection: EMTController())
     try app.register(collection: ClipboardController())
     try app.register(collection: LastFMController())
 }
