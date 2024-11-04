@@ -26,4 +26,5 @@ func routes(_ app: Application) throws {
     try app.register(collection: EMTController())
     try app.register(collection: ClipboardController())
     try app.register(collection: LastFMController())
+    try app.register(collection: GasopriceController())
 }
