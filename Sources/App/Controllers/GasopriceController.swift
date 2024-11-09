@@ -89,6 +89,7 @@ struct GasopriceController: RouteCollection {
         let gasoprice = routes.grouped("gasoprice")
 
         gasoprice.get("stats", use: getFuelStats)
+        gasoprice.get("prom-stats", use: getPrometheusStats)
     }
 
     private func isCurrentlyOpen(schedule: String, currentDate: Date) -> Bool {
@@ -311,6 +312,127 @@ struct GasopriceController: RouteCollection {
             status: .ok,
             headers: ["Content-Type": "application/json"],
             body: .init(data: JSONSerialization.data(withJSONObject: stats))
+        )
+    }
+
+    @Sendable
+    private func getPrometheusStats(req: Request) async throws -> Response {
+        let url = "https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes/EstacionesTerrestres/"
+        let response = try await req.client.get(URI(string: url))
+        let gasopriceResponse = try response.content.decode(GasopriceResponse.self)
+        
+        var metrics: String = ""
+
+        metrics += "# HELP gas_station_total_total Total number of stations\n"
+        metrics += "# TYPE gas_station_total_total gauge\n"
+        metrics += "gas_station_total_total \(gasopriceResponse.stations.count)\n"
+        
+        let fuelTypes = [
+            ("dieselA", { (station: GasStation) -> String in station.priceDieselA }),
+            ("dieselB", { (station: GasStation) -> String in station.priceDieselB }),
+            ("dieselPremium", { (station: GasStation) -> String in station.priceDieselPremium }),
+            ("gasoline95E5", { (station: GasStation) -> String in station.priceGasoline95E5 }),
+            ("gasoline95E10", { (station: GasStation) -> String in station.priceGasoline95E10 }),
+            ("gasoline95E5Premium", { (station: GasStation) -> String in station.priceGasoline95E5Premium }),
+            ("gasoline98E5", { (station: GasStation) -> String in station.priceGasoline98E5 }),
+            ("gasoline98E10", { (station: GasStation) -> String in station.priceGasoline98E10 }),
+            ("biodiesel", { (station: GasStation) -> String in station.priceBiodiesel }),
+            ("bioethanol", { (station: GasStation) -> String in station.priceBioethanol }),
+            ("naturalGasCompressed", { (station: GasStation) -> String in station.priceNaturalGasCompressed }),
+            ("naturalGasLiquefied", { (station: GasStation) -> String in station.priceNaturalGasLiquefied }),
+            ("lpg", { (station: GasStation) -> String in station.priceLPG }),
+            ("hydrogen", { (station: GasStation) -> String in station.priceHydrogen })
+        ]
+        
+        for (fuelType, priceExtractor) in fuelTypes {
+            let prices = gasopriceResponse.stations
+                .map(priceExtractor)
+                .compactMap { Double($0.replacingOccurrences(of: ",", with: ".")) }
+                .filter { $0 > 0 }
+            
+            if !prices.isEmpty {
+                let minPrice = prices.min() ?? 0
+                let maxPrice = prices.max() ?? 0
+                let avgPrice = prices.average()
+                
+                metrics += "# HELP gas_station_price_\(fuelType)_min Minimum price of \(fuelType)\n"
+                metrics += "# TYPE gas_station_price_\(fuelType)_min gauge\n"
+                metrics += "gas_station_price_\(fuelType)_min \(minPrice)\n"
+                
+                metrics += "# HELP gas_station_price_\(fuelType)_max Maximum price of \(fuelType)\n"
+                metrics += "# TYPE gas_station_price_\(fuelType)_max gauge\n"
+                metrics += "gas_station_price_\(fuelType)_max \(maxPrice)\n"
+                
+                metrics += "# HELP gas_station_price_\(fuelType)_avg Average price of \(fuelType)\n"
+                metrics += "# TYPE gas_station_price_\(fuelType)_avg gauge\n"
+                metrics += "gas_station_price_\(fuelType)_avg \(avgPrice)\n"
+                
+                metrics += "# HELP gas_station_price_\(fuelType)_count Count of \(fuelType) prices\n"
+                metrics += "# TYPE gas_station_price_\(fuelType)_count gauge\n"
+                metrics += "gas_station_price_\(fuelType)_count \(prices.count)\n"
+            }
+        }
+        
+        let provinceStats = Dictionary(grouping: gasopriceResponse.stations) { $0.province }
+        for (province, stations) in provinceStats {
+            let provincen = province
+            .replacingOccurrences(of: "Á", with: "A")
+            .replacingOccurrences(of: "É", with: "E")
+            .replacingOccurrences(of: "Í", with: "I")
+            .replacingOccurrences(of: "Ó", with: "O")
+            .replacingOccurrences(of: "Ú", with: "U")
+            .replacingOccurrences(of: "Ñ", with: "N")
+            .replacingOccurrences(of: "Ç", with: "C")
+            .replacingOccurrences(of: "è", with: "e")
+            metrics += "# HELP gas_station_count_by_province_count Number of stations in province \(provincen)\n"
+            metrics += "# TYPE gas_station_count_by_province_count gauge\n"
+            metrics += "gas_station_count_by_province_count{province=\"\(provincen)\"} \(stations.count)\n"
+        }
+        
+        let schedules = Dictionary(grouping: gasopriceResponse.stations) { 
+            categorizeSchedule($0.schedule, date: gasopriceResponse.date)
+        }
+        for (scheduleType, stations) in schedules {
+            metrics += "# HELP gas_station_schedule_type_count Number of stations with schedule type \(scheduleType)\n"
+            metrics += "# TYPE gas_station_schedule_type_count gauge\n"
+            metrics += "gas_station_schedule_type_count{schedule_type=\"\(scheduleType)\"} \(stations.count)\n"
+        }
+        
+        let saleTypes = Dictionary(grouping: gasopriceResponse.stations) { $0.saleType }
+        for (saleType, stations) in saleTypes {
+            metrics += "# HELP gas_station_sale_type_count Number of stations with sale type \(saleType)\n"
+            metrics += "# TYPE gas_station_sale_type_count gauge\n"
+            metrics += "gas_station_sale_type_count{sale_type=\"\(saleType)\"} \(stations.count)\n"
+        }
+        
+        let initialBrandCount = Dictionary(grouping: gasopriceResponse.stations) { station -> String in 
+            station.label.uppercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        .mapValues { $0.count }
+        
+        let significantBrands = initialBrandCount.filter { $0.value >= 30 }
+        
+        for (brand, count) in significantBrands {
+            metrics += "# HELP gas_station_brand_distribution_count Distribution of stations by brand \(brand)\n"
+            metrics += "# TYPE gas_station_brand_distribution_count gauge\n"
+            metrics += "gas_station_brand_distribution_count{brand=\"\(brand)\"} \(count)\n"
+        }
+        
+        let marginStats = Dictionary(grouping: gasopriceResponse.stations) { $0.margin }
+        for (margin, stations) in marginStats {
+            metrics += "# HELP gas_station_margin_distribution_count Distribution of stations by margin \(margin)\n"
+            metrics += "# TYPE gas_station_margin_distribution_count gauge\n"
+            metrics += "gas_station_margin_distribution_count{margin=\"\(margin)\"} \(stations.count)\n"
+        }
+        
+        metrics += "# HELP gas_station_last_update Last update timestamp for gas stations\n"
+        metrics += "# TYPE gas_station_last_update gauge\n"
+        metrics += "gas_station_last_update \(Date().timeIntervalSince1970)\n"
+        
+        return Response(
+            status: .ok,
+            headers: ["Content-Type": "text/plain"],
+            body: .init(string: metrics)
         )
     }
 }
