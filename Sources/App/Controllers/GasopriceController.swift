@@ -226,6 +226,52 @@ struct GasopriceController: RouteCollection {
         }
     }
 
+    private func getProvincePriceStats(_ stations: [GasStation]) -> [String: [String: [String: Double]]] {
+        let fuelTypes = [
+            "dieselA": { (station: GasStation) -> String in station.priceDieselA },
+            "dieselB": { (station: GasStation) -> String in station.priceDieselB },
+            "dieselPremium": { (station: GasStation) -> String in station.priceDieselPremium },
+            "gasoline95E5": { (station: GasStation) -> String in station.priceGasoline95E5 },
+            "gasoline95E10": { (station: GasStation) -> String in station.priceGasoline95E10 },
+            "gasoline95E5Premium": { (station: GasStation) -> String in station.priceGasoline95E5Premium },
+            "gasoline98E5": { (station: GasStation) -> String in station.priceGasoline98E5 },
+            "gasoline98E10": { (station: GasStation) -> String in station.priceGasoline98E10 },
+            "biodiesel": { (station: GasStation) -> String in station.priceBiodiesel },
+            "bioethanol": { (station: GasStation) -> String in station.priceBioethanol },
+            "naturalGasCompressed": { (station: GasStation) -> String in station.priceNaturalGasCompressed },
+            "naturalGasLiquefied": { (station: GasStation) -> String in station.priceNaturalGasLiquefied },
+            "lpg": { (station: GasStation) -> String in station.priceLPG },
+            "hydrogen": { (station: GasStation) -> String in station.priceHydrogen }
+        ]
+
+        let provinceStats = Dictionary(grouping: stations) { $0.province }
+        var result: [String: [String: [String: Double]]] = [:]
+
+        for (province, provinceStations) in provinceStats {
+            var fuelStats: [String: [String: Double]] = [:]
+            
+            for (fuelType, priceExtractor) in fuelTypes {
+                let prices = provinceStations
+                    .map(priceExtractor)
+                    .compactMap { Double($0.replacingOccurrences(of: ",", with: ".")) }
+                    .filter { $0 > 0 }
+                
+                if !prices.isEmpty {
+                    fuelStats[fuelType] = [
+                        "min": prices.min() ?? 0,
+                        "max": prices.max() ?? 0,
+                        "avg": prices.average(),
+                        "count": Double(prices.count)
+                    ]
+                }
+            }
+            
+            result[province] = fuelStats
+        }
+        
+        return result
+    }
+
     @Sendable
     func getFuelStats(req: Request) async throws -> Response {
         let url = "https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes/EstacionesTerrestres/"
@@ -307,6 +353,9 @@ struct GasopriceController: RouteCollection {
         stats["marginDistribution"] = margins
         
         stats["lastUpdate"] = gasopriceResponse.date
+        
+        // Add province price statistics
+        stats["provincesPriceStats"] = getProvincePriceStats(gasopriceResponse.stations)
         
         return try Response(
             status: .ok,
@@ -423,6 +472,29 @@ struct GasopriceController: RouteCollection {
             metrics += "# HELP gas_station_margin_distribution_count Distribution of stations by margin \(margin)\n"
             metrics += "# TYPE gas_station_margin_distribution_count gauge\n"
             metrics += "gas_station_margin_distribution_count{margin=\"\(margin)\"} \(stations.count)\n"
+        }
+        
+        // Add province price metrics
+        let provincePriceStats = getProvincePriceStats(gasopriceResponse.stations)
+        for (province, fuelStats) in provincePriceStats {
+            let provinceName = province
+                .replacingOccurrences(of: "Á", with: "A")
+                .replacingOccurrences(of: "É", with: "E")
+                .replacingOccurrences(of: "Í", with: "I")
+                .replacingOccurrences(of: "Ó", with: "O")
+                .replacingOccurrences(of: "Ú", with: "U")
+                .replacingOccurrences(of: "Ñ", with: "N")
+                .replacingOccurrences(of: "Ç", with: "C")
+                .replacingOccurrences(of: "è", with: "e")
+
+            for (fuelType, stats) in fuelStats {
+                metrics += "# HELP gas_station_province_price_\(fuelType) Price statistics for \(fuelType) in \(provinceName)\n"
+                metrics += "# TYPE gas_station_province_price_\(fuelType) gauge\n"
+                metrics += "gas_station_province_price_\(fuelType){province=\"\(provinceName)\",type=\"min\"} \(stats["min"] ?? 0)\n"
+                metrics += "gas_station_province_price_\(fuelType){province=\"\(provinceName)\",type=\"max\"} \(stats["max"] ?? 0)\n"
+                metrics += "gas_station_province_price_\(fuelType){province=\"\(provinceName)\",type=\"avg\"} \(stats["avg"] ?? 0)\n"
+                metrics += "gas_station_province_price_\(fuelType){province=\"\(provinceName)\",type=\"count\"} \(stats["count"] ?? 0)\n"
+            }
         }
         
         metrics += "# HELP gas_station_last_update Last update timestamp for gas stations\n"
