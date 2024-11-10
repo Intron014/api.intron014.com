@@ -70,6 +70,7 @@ struct BicimadController: RouteCollection {
         guard let hashCode = ecbEncryptBase64(src: secondCipherStr.data(using: .utf8)!, key: decodedAccessKey) else {
             throw Abort(.internalServerError, reason: "Encryption failed")
         }
+        req.logger.info("Hashcode Generated: \(hashCode)")
         return Response(body: Response.Body(string: hashCode))
     }
     
