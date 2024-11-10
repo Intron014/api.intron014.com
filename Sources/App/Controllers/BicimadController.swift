@@ -62,6 +62,8 @@ struct BicimadController: RouteCollection {
     
     @Sendable
     func getBicimadHashcode(req: Request) throws -> Response {
+        let startTime = Date()
+        
         let data = try req.content.decode(BikeData.self)
         req.logger.info("Hashcode Requested:\n- D1: \(data.D1)\n- D2: \(data.D2)\n- Bike Nº: \(data.BikeNumber)\n- Docker: \(data.Docker)\n- DNI: \(data.DNI)\n-")
         let (decodedAccessKey, decodedBikeKey) = try decodeKeys(encodedAccessKey: Environment.get("eAK")!, encodedBikeKey: Environment.get("eBK")!)
@@ -70,7 +72,11 @@ struct BicimadController: RouteCollection {
         guard let hashCode = ecbEncryptBase64(src: secondCipherStr.data(using: .utf8)!, key: decodedAccessKey) else {
             throw Abort(.internalServerError, reason: "Encryption failed")
         }
-        req.logger.info("Hashcode Generated: \(hashCode)")
+        
+        let endTime = Date()
+        let timeInterval = endTime.timeIntervalSince(startTime)
+        req.logger.info("Hashcode Generated: \(hashCode)\n in \(timeInterval) seconds")
+        
         return Response(body: Response.Body(string: hashCode))
     }
     
