@@ -66,9 +66,9 @@ struct BicimadController: RouteCollection {
         
         let data = try req.content.decode(BikeData.self)
         req.logger.info("Hashcode Requested:\n- D1: \(data.D1)\n- D2: \(data.D2)\n- Bike Nº: \(data.BikeNumber)\n- Docker: \(data.Docker)\n- DNI: \(data.DNI)\n-")
-        let (decodedAccessKey, decodedBikeKey) = try decodeKeys(encodedAccessKey: Environment.get("eAK")!, encodedBikeKey: Environment.get("eBK")!)
-        let firstCipherStr = generateFirstCipherString(data: data)
-        let secondCipherStr = generateSecondCipherString(firstCipherStr: firstCipherStr, decodedBikeKey: decodedBikeKey)
+        let (decodedAccessKey, decodedBikeKey) = try decodeKeys(encodedAccessKey: Environment.get("eAK")!, encodedBikeKey: Environment.get("eBK")!, req: req)
+        let firstCipherStr = generateFirstCipherString(data: data, req: req)
+        let secondCipherStr = try generateSecondCipherString(firstCipherStr: firstCipherStr, decodedBikeKey: decodedBikeKey, req: req)
         guard let hashCode = ecbEncryptBase64(src: secondCipherStr.data(using: .utf8)!, key: decodedAccessKey) else {
             throw Abort(.internalServerError, reason: "Encryption failed")
         }
@@ -80,38 +80,40 @@ struct BicimadController: RouteCollection {
         return Response(body: Response.Body(string: hashCode))
     }
     
-    func decodeKeys(encodedAccessKey: String, encodedBikeKey: String) throws -> (String, String) {
+    func decodeKeys(encodedAccessKey: String, encodedBikeKey: String, req: Request) throws -> (String, String) {
         guard let accessKeyData = Data(base64Encoded: encodedAccessKey), let bikeKeyData = Data(base64Encoded: encodedBikeKey)
         else {
             throw Abort(.internalServerError, reason: "Key decoding failed")
         }
         let decodedAccessKey = String(data: accessKeyData, encoding: .utf8)!.uppercased().prefix(8)
         let decodedBikeKey = String(data: bikeKeyData, encoding: .utf8)!
+        req.logger.info("Keys Decoded:\n- Access Key: \(decodedAccessKey)\n- Bike Key: \(decodedBikeKey)\n-")
 
         return (String(decodedAccessKey), decodedBikeKey)
     }
     
-    func generateFirstCipherString(data: BikeData) -> String {
-        let (d1, d2) = resizeCoordinates(d1: data.D1, d2: data.D2)
+    func generateFirstCipherString(data: BikeData, req: Request) -> String {
+        let (d1, d2) = resizeCoordinates(d1: data.D1, d2: data.D2, req: req)
         var firstCipherStr = "\(data.BikeNumber)#\(data.Docker)#\(d1)#\(d2)#D#\(data.DNI)"
         
         if firstCipherStr.count % 8 != 0 {
             let length = 8 - (firstCipherStr.count % 8)
             firstCipherStr += String(repeating: "#", count: length)
         }
+        req.logger.info("First Cipher String: \(firstCipherStr)")
         return firstCipherStr
     }
     
-    func resizeCoordinates(d1: String, d2: String) -> (String, String) {
+    func resizeCoordinates(d1: String, d2: String, req: Request) -> (String, String) {
         let d1Padded = d1.padding(toLength: 10, withPad: "0", startingAt: 0)
         let d2Padded = d2.padding(toLength: 10, withPad: "0", startingAt: 0)
-        
+        req.logger.info("Coordinates Resized:\n- D1: \(d1Padded)\n- D2: \(d2Padded)\n-")
         return (String(d1Padded.prefix(10)), String(d2Padded.prefix(10)))
     }
     
-    func generateSecondCipherString(firstCipherStr: String, decodedBikeKey: String) -> String {
-        guard let cipheredString = ecbEncryptHex(src: firstCipherStr.data(using: .utf8)!, key: decodedBikeKey) else {
-            return ""
+    func generateSecondCipherString(firstCipherStr: String, decodedBikeKey: String, req: Request) throws -> String {
+        guard let cipheredString = ecbEncryptHex(src: firstCipherStr.data(using: .utf8)!, key: decodedBikeKey, req: req) else {
+            throw Abort(.internalServerError, reason: "Second encryption failed")
         }
         
         var secondCipherStr = "B\(cipheredString)"
@@ -120,13 +122,17 @@ struct BicimadController: RouteCollection {
             let length = 8 - (secondCipherStr.count % 8)
             secondCipherStr += String(repeating: "Z", count: length)
         }
+        req.logger.info("Second Cipher String: \(secondCipherStr)")
         return secondCipherStr
     }
     
-    func ecbEncryptHex(src: Data, key: String) -> String? {
+    func ecbEncryptHex(src: Data, key: String, req: Request) -> String? {
         let keyData = key.data(using: .utf8)!
+        req.logger.info("Key Data: \(keyData)")
+
         return ecbEncrypt(src: src, key: keyData)?.map { String(format: "%02hhx", $0) }.joined()
     }
+
 
     func ecbEncryptBase64(src: Data, key: String) -> String? {
         let keyData = key.data(using: .utf8)!
