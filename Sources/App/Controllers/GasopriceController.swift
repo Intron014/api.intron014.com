@@ -404,21 +404,28 @@ struct GasopriceController: RouteCollection {
                 let maxPrice = prices.max() ?? 0
                 let avgPrice = prices.average()
                 
-                metrics += "# HELP gas_station_price_\(fuelType)_min Minimum price of \(fuelType)\n"
-                metrics += "# TYPE gas_station_price_\(fuelType)_min gauge\n"
-                metrics += "gas_station_price_\(fuelType)_min \(minPrice)\n"
+                // metrics += "# HELP gas_station_price_\(fuelType)_min Minimum price of \(fuelType)\n"
+                // metrics += "# TYPE gas_station_price_\(fuelType)_min gauge\n"
+                // metrics += "gas_station_price_\(fuelType)_min \(minPrice)\n"
                 
-                metrics += "# HELP gas_station_price_\(fuelType)_max Maximum price of \(fuelType)\n"
-                metrics += "# TYPE gas_station_price_\(fuelType)_max gauge\n"
-                metrics += "gas_station_price_\(fuelType)_max \(maxPrice)\n"
+                // metrics += "# HELP gas_station_price_\(fuelType)_max Maximum price of \(fuelType)\n"
+                // metrics += "# TYPE gas_station_price_\(fuelType)_max gauge\n"
+                // metrics += "gas_station_price_\(fuelType)_max \(maxPrice)\n"
                 
-                metrics += "# HELP gas_station_price_\(fuelType)_avg Average price of \(fuelType)\n"
-                metrics += "# TYPE gas_station_price_\(fuelType)_avg gauge\n"
-                metrics += "gas_station_price_\(fuelType)_avg \(avgPrice)\n"
+                // metrics += "# HELP gas_station_price_\(fuelType)_avg Average price of \(fuelType)\n"
+                // metrics += "# TYPE gas_station_price_\(fuelType)_avg gauge\n"
+                // metrics += "gas_station_price_\(fuelType)_avg \(avgPrice)\n"
                 
-                metrics += "# HELP gas_station_price_\(fuelType)_count Count of \(fuelType) prices\n"
-                metrics += "# TYPE gas_station_price_\(fuelType)_count gauge\n"
-                metrics += "gas_station_price_\(fuelType)_count \(prices.count)\n"
+                // metrics += "# HELP gas_station_price_\(fuelType)_count Count of \(fuelType) prices\n"
+                // metrics += "# TYPE gas_station_price_\(fuelType)_count gauge\n"
+                // metrics += "gas_station_price_\(fuelType)_count \(prices.count)\n"
+
+                metrics += "# HELP gas_station_price Price stats of \(fuelType) fuel type\n"
+                metrics += "# TYPE gas_station_price gauge\n"
+                metrics += "gas_station_price{fuel=\"\(fuelType)\",type=\"min\"} \(minPrice)\n"
+                metrics += "gas_station_price{fuel=\"\(fuelType)\",type=\"max\"} \(maxPrice)\n"
+                metrics += "gas_station_price{fuel=\"\(fuelType)\",type=\"avg\"} \(avgPrice)\n"
+                metrics += "gas_station_price{fuel=\"\(fuelType)\",type=\"count\"} \(prices.count)\n"
             }
         }
         
