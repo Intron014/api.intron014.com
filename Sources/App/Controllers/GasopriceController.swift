@@ -92,7 +92,7 @@ struct GasopriceController: RouteCollection {
         gasoprice.get("prom-stats", use: getPrometheusStats)
     }
 
-    private func removeUnwantedLetters(province) {
+    private func removeUnwantedLetters(province: String) -> String {
         return province
             .replacingOccurrences(of: "Á", with: "A")
             .replacingOccurrences(of: "É", with: "E")
@@ -442,7 +442,7 @@ struct GasopriceController: RouteCollection {
         
         let provinceStats = Dictionary(grouping: gasopriceResponse.stations) { $0.province }
         for (province, stations) in provinceStats {
-            let provincen = removeUnwantedLetters(province)
+            let provincen = removeUnwantedLetters(province: province)
             metrics += "# HELP gas_station_count_by_province_count Number of stations in province \(provincen)\n"
             metrics += "# TYPE gas_station_count_by_province_count gauge\n"
             metrics += "gas_station_count_by_province_count{province=\"\(provincen)\"} \(stations.count)\n"
@@ -487,7 +487,7 @@ struct GasopriceController: RouteCollection {
         // Add province price metrics
         let provincePriceStats = getProvincePriceStats(gasopriceResponse.stations)
         for (province, fuelStats) in provincePriceStats {
-            let provinceName = removeUnwantedLetters(province)
+            let provinceName = removeUnwantedLetters(province: province)
 
             for (fuelType, stats) in fuelStats {
                 metrics += "# HELP gas_station_province_price_\(fuelType) Price statistics for \(fuelType) in \(provinceName)\n"
