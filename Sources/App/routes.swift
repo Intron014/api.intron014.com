@@ -23,7 +23,7 @@ func routes(_ app: Application) throws {
     @Sendable
     func getHealthResponse() -> HealthResponse {
         let randomStatus = statusMessages.randomElement() ?? "ok"
-        return HealthResponse(status: [randomStatus], version: "1.3.2")
+        return HealthResponse(status: [randomStatus], version: "1.3.3")
     }
 
     app.get("health") { req -> HealthResponse in
@@ -34,16 +34,10 @@ func routes(_ app: Application) throws {
         return getHealthResponse()
     }
     
-    app.get("hello") { req -> String in
-        let hello = try req.query.decode(Hello.self)
-        return "Hello, \(hello.name ?? "Anonymous")"
-    }
-    
-    app.get("hello", ":name") {req -> String in
-        guard let name = req.parameters.get("name", as: Int.self) else {
-            throw Abort.redirect(to: "https://intron014.com/404")
-        }
-        return "\(name) wooo"
+    app.get("webfiles", "**") { req -> Response in
+        let path = req.parameters.getCatchall().joined(separator: "/")
+        let filePath = app.directory.workingDirectory + "webfiles/" + path
+        return req.fileio.streamFile(at: filePath)
     }
     
     
