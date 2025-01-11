@@ -27,6 +27,6 @@ public func configure(_ app: Application) async throws {
     )
     let cors = CORSMiddleware(configuration: corsConfiguration)
 
-    app.middleware.use(cors)
+    app.middleware.use(cors, at: .beginning)
     try routes(app)
 }
