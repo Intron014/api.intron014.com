@@ -7,6 +7,32 @@ func routes(_ app: Application) throws {
         var name: String?
     }
 
+    struct HealthResponse: Content {
+        var status: [String]
+        var version: String
+    }
+
+    let statusMessages = [
+        "All systems go!",
+        "Running smoothly!",
+        "Everything is awesome!",
+        "Service is up and running!",
+        "All good here!"
+    ]
+
+    @Sendable
+    func getHealthResponse() -> HealthResponse {
+        let randomStatus = statusMessages.randomElement() ?? "ok"
+        return HealthResponse(status: [randomStatus], version: "1.3.2")
+    }
+
+    app.get("health") { req -> HealthResponse in
+        return getHealthResponse()
+    }
+
+    app.get("") { req -> HealthResponse in
+        return getHealthResponse()
+    }
     
     app.get("hello") { req -> String in
         let hello = try req.query.decode(Hello.self)
